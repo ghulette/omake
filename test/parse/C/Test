@@ -1,0 +1,5 @@
+open parse/C/Parse
+
+prog = $(parser.parse-file prog, input.c)
+
+println($"Prog = $(prog.to-string)")

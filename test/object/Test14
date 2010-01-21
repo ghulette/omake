@@ -1,0 +1,17 @@
+A[] = key
+
+Test(map) =
+   A.foreach(key)
+      map = $(map.add $(key), new)
+      export map
+
+   new = $(map.find key)
+   if $(not $(equal $(new), new))
+      println($"Error: A.foreach exports into A")
+      exit 1
+
+X. =
+   extends $(Map)
+   $|key| = old
+
+Test($X)

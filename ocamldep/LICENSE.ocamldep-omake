@@ -1,0 +1,10 @@
+The ocamldep-omake binary is a modified version of the ocamldep included in
+OCaml 3.09.2 that is Copyright Institut National de Recherche en Informatique
+et en Automatique and distributed under the terms of the Q Public License
+version 1.0.
+
+The source code for the unmodified version is available at
+http://caml.inria.fr/distrib/ocaml-3.09/ocaml-3.09.2.tar.bz2
+
+The patch that was used to compile this modified version is available from
+http://caml.inria.fr/mantis/view.php?id=4047

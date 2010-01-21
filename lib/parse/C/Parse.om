@@ -1,0 +1,3242 @@
+#
+# Lexer for C code
+#
+open parse/C/Lex
+
+private. =
+    semi = $";"
+    space = $" "
+    tab = $"    "
+    tnl = $(nl)$(tab)
+    comma = $", "
+    eof = $"\\'"
+    empty[] =
+
+########################################################################
+# This is all the info we collect on the side.
+#
+protected. =
+    TypeTable. =
+        extends $(Map)
+
+        protected. =
+            name = type
+
+        protected. =
+            to-string() =
+                s =
+                this.foreach(v, ty)
+                    s = $(s)$"/* $(name) $(v) = $(ty.to-string); */$(nl)"
+                    export
+                value $(s)
+
+    # For constructing type names
+    name-index = 0
+
+    # For prettier printing of struct names
+    PRINT_NAME = false
+
+    # Used to decide when removal of type qualifiers is allowed
+    IS_POINTER = false
+    IS_EXTERN = false
+
+public. =
+    #
+    # Are we parsing C++?
+    # NOTE: only the C fragment of C++ and references are currently supported.
+    #
+    Cxx = false
+
+#
+# The public types and parser
+#
+public. =
+    Base. =
+        class Base
+
+        protected.loc =
+
+        protected. =
+            make-loc() =
+                protected.loc = $(loc)
+                return $(this)
+
+            array-to-string(l) =
+                s =
+                foreach(x, $(l))
+                    s = $(s)$(x.to-string)
+                    export
+                value $(s)
+
+            array-to-string-pre(l, pre) =
+                s =
+                foreach(x, $(l))
+                    s = $(s)$(pre)$(x.to-string)
+                    export
+                value $(s)
+
+            array-to-string-wrap(l, pre, post) =
+                s =
+                foreach(x, $(l))
+                    s = $(s)$(pre)$(x.to-string)$(post)
+                    export
+                value $(s)
+
+            array-to-string-term(l, term) =
+                s =
+                foreach(x, $(l))
+                    s = $(s)$(x.to-string)$(term)
+                    export
+                value $(s)
+
+            array-to-string-sep(l, sep) =
+                s =
+                sepx =
+                foreach(x, $(l))
+                    s = $(s)$(sepx)$(x.to-string)
+                    sepx = $(sep)
+                    export
+                value $(s)
+
+            array-to-identifier-term(l, term) =
+                s =
+                foreach(x, $(l))
+                    s = $(s)$(x.to-identifier)$(term)
+                    export
+                value $(s)
+
+            array-to-identifier-sep(l, sep) =
+                s =
+                sepx =
+                foreach(x, $(l))
+                    s = $(s)$(sepx)$(x.to-identifier)
+                    sepx = $(sep)
+                    export
+                value $(s)
+
+    ########################################################################
+    # A complete program
+    #
+    Prog. =
+        class Prog
+        extends $(Base)
+
+        protected. =
+            defs = $(empty)
+
+            typedefs. =
+                extends $(TypeTable)
+                name = typedef
+
+            structs. =
+                extends $(TypeTable)
+                name = struct
+
+            tagged-unions. =
+                extends $(TypeTable)
+                name = __tagged_union
+
+            enums. =
+                extends $(TypeTable)
+                name = enum
+
+            #
+            # Info about the anonymous types
+            #
+            type-names. =
+                extends $(Map)
+
+            anon-struct-types = $(empty)
+            anon-enum-types = $(empty)
+
+        protected. =
+            #
+            # Adding to the tables
+            #
+            add-defs(defs) =
+                this.defs = $(defs)
+                return $(this)
+
+            add-struct(name, info) =
+                structs = $(structs.add $(name), $(info))
+                return $(this)
+
+            add-tagged-union(name, info) =
+                tagged-unions = $(tagged-unions.add $(name), $(info))
+                return $(this)
+
+            add-enum(name, info) =
+                enums = $(enums.add $(name), $(info))
+                return $(this)
+
+            add-typedef(name, def) =
+                typedefs = $(typedefs.add $(name), $(def))
+                return $(this)
+
+            add-type-name(name, def) =
+                type-names = $(type-names.add $(name), $(def))
+                return $(this)
+
+            add-anon-struct-type(info) =
+                anon-struct-types[] += $(info)
+                return $(this)
+
+            add-anon-enum-type(info) =
+                anon-enum-types[] += $(info)
+                return $(this)
+
+            #
+            # Print it out
+            #
+            to-string() =
+                value $(array-to-string-term $(defs), $(nl))$(typedefs.to-string)$(structs.to-string)$(enums.to-string)
+
+#
+# This is the actual program
+#
+public.prog = $(Prog)
+
+public. =
+    ########################################################################
+    # Operators
+    #
+    Op. =
+        class Op
+        extends $(Base)
+
+        protected.op =
+
+        protected. =
+            make(op) =
+                this = $(make-loc)
+                this.op = $(op)
+                return $(this)
+
+            to-string() =
+                value $(op)
+
+    Unop. =
+        class Unop
+        extends $(Op)
+
+    Binop. =
+        class Binop
+        extends $(Op)
+
+    Ternop. =
+        class Ternop
+        extends $(Op)
+
+    ########################################################################
+    # Expressions
+    #
+    Exp. =
+        class Exp
+        extends $(Base)
+
+        protected. =
+            make-exp() =
+                value $(make-loc)
+
+    NoneExp. =
+        class NoneExp
+        extends $(Exp)
+
+        protected. =
+            make() =
+                make-exp()
+
+            to-string() =
+
+    LiteralExp. =
+        class LiteralExp
+        extends $(Exp)
+
+        protected. =
+            val =
+
+        protected. =
+            make(val) =
+                this = $(make-exp)
+                this.val = $(val)
+                return $(this)
+
+            to-string() =
+                value $(val)
+
+    CharExp. =
+        class CharExp
+        extends $(LiteralExp)
+
+    IntExp. =
+        class IntExp
+        extends $(LiteralExp)
+
+    FloatExp. =
+        class FloatExp
+        extends $(LiteralExp)
+
+    StringExp. =
+        class StringExp
+        extends $(LiteralExp)
+
+    IdExp. =
+        class IdExp
+        extends $(LiteralExp)
+
+    #
+    # Objects in the AST.
+    #
+    Exp1. =
+        class Exp1
+        extends $(Exp)
+
+        protected. =
+            op =
+            arg =
+
+        protected. =
+            make(op, arg) =
+                this = $(make-exp)
+                this.op = $(Unop.make $(op))
+                this.arg = $(arg)
+                return $(this)
+
+            to-string() =
+                value $"$(op.to-string)$(arg.to-string)"
+
+    PreExp1. =
+        class PreExp1
+        extends $(Exp1)
+
+    PostExp1. =
+        class PostExp1
+        extends $(Exp1)
+
+        protected. =
+            to-string() =
+                return $"$(arg.to-string)$(op.to-string)"
+
+    Exp2. =
+        class Exp2
+        extends $(Exp)
+
+        protected. =
+            op =
+            arg1 =
+            arg2 =
+
+        protected. =
+            make(op, arg1, arg2) =
+                this = $(make-exp)
+                this.op = $(Binop.make $(op))
+                this.arg1 = $(arg1)
+                this.arg2 = $(arg2)
+                return $(this)
+
+            to-string() =
+                value $"$(arg1.to-string) $(op.to-string) $(arg2.to-string)"
+
+    AssignExp. =
+        class AssignExp
+
+        extends $(Exp2)
+
+    Exp3. =
+        class Exp3
+        extends $(Exp)
+
+        protected. =
+            op1 =
+            op2 =
+            arg1 =
+            arg2 =
+            arg3 =
+
+        protected. =
+            make(arg1, op1, arg2, op2, arg3) =
+                this = $(make-exp)
+                this.op1 = $(Ternop.make op1)
+                this.op2 = $(Ternop.make op2)
+                this.arg1 = $(arg1)
+                this.arg2 = $(arg2)
+                this.arg3 = $(arg3)
+                return $(this)
+
+            to-string() =
+                value $"$(arg1.to-string) $(op1.to-string) $(arg2.to-string) $(op2.to-string) $(arg3.to-string)"
+
+    #
+    # Other expressions
+    #
+    ParensExp. =
+        class ParensExp
+        extends $(Exp)
+
+        protected. =
+            exp =
+
+        protected. =
+            make(exp) =
+                this = $(make-exp)
+                this.exp = $(exp)
+                return $(this)
+
+            to-string() =
+                return $"($(exp.to-string))"
+
+    SubscriptExp. =
+        class SubscriptExp
+        extends $(Exp)
+
+        protected. =
+            arg1 =
+            arg2 =
+
+        protected. =
+            make(arg1, arg2) =
+                this = $(make-exp)
+                this.arg1 = $(arg1)
+                this.arg2 = $(arg2)
+                return $(this)
+
+            to-string() =
+                value $"$(arg1.to-string)[$(arg2.to-string)]"
+
+    ApplyExp. =
+        class ApplyExp
+        extends $(Exp)
+
+        protected. =
+            var =
+            args =
+
+        protected. =
+            make(var, args) =
+                this = $(make-exp)
+                this.var = $(var)
+                this.args = $(args)
+                return $(this)
+
+            to-string() =
+                value $"$(var)($(array-to-string-sep $(args), $(comma)))"
+
+    CastExp. =
+        class CastExp
+        extends $(Exp)
+
+        protected. =
+            type =
+            exp =
+
+        protected. =
+            make(type, exp) =
+                this = $(make-exp)
+                this.type = $(type)
+                this.exp = $(exp)
+                return $(this)
+
+            to-string() =
+                value $"($(type.to-string)) $(exp.to-string)"
+
+    SizeofExp. =
+        class CastExp
+        extends $(Exp)
+
+        protected. =
+            val =
+
+        protected. =
+            make(val) =
+                this = $(make-exp)
+                this.val = $(val)
+                return $(this)
+
+            to-string() =
+                value $"sizeof($(val.to-string))"
+
+    ########################################################################
+    # Initializers
+    #
+    Initializer. =
+        class Initializer
+        extends $(Base)
+
+        protected. =
+            make-init() =
+                make-loc()
+
+            to-string() =
+                value Initializer
+
+    InitExp. =
+        class InitExp
+        extends $(Initializer)
+
+        protected.exp =
+
+        protected. =
+            make(exp) =
+                this = $(make-init)
+                this.exp = $(exp)
+                return $(this)
+
+            to-string() =
+                value $"/*InitExp*/ $(exp.to-string)"
+
+    InitArray. =
+        class InitArray
+        extends $(Initializer)
+
+        protected.exp_list =
+
+        protected. =
+            make(exp_list) =
+                this = $(make-init)
+                this.exp_list = $(exp_list)
+                return $(this)
+
+            to-string() =
+                value $"/*InitArray*/{ ... }"
+
+    InitField. =
+        class InitField
+        extends $(Initializer)
+
+        protected. =
+            name =
+            exp =
+
+        protected. =
+            make(name, exp) =
+                this = $(make-init)
+                this.name = $(name)
+                this.exp  = $(exp)
+                return $(this)
+
+            to-string() =
+                value $"/*InitField*/ $(name): $(exp.to-string)"
+
+    ########################################################################
+    # Statements
+    #
+    Stmt. =
+        class Stmt
+        extends $(Base)
+
+        protected. =
+            make-stmt() =
+                make-loc()
+
+    EmptyStmt. =
+        class EmptyStmt
+        extends $(Stmt)
+
+        protected. =
+            make() =
+                make-stmt()
+
+            to-string() =
+                return $";"
+
+    ExpStmt. =
+        class ExpStmt
+        extends $(Stmt)
+
+        protected. =
+            exp =
+
+        protected. =
+            make(exp) =
+                this = $(make-stmt)
+                this.exp = $(exp)
+                return $(this)
+
+            to-string() =
+                return $"$(exp.to-string);"
+
+    DefaultStmt. =
+        class DefaultStmt
+        extends $(Stmt)
+
+        protected. =
+            make() =
+                make-stmt()
+
+            to-string() =
+                value $"default:"
+
+    CaseStmt. =
+        class CaseStmt
+        extends $(Stmt)
+
+        protected.exp =
+
+        protected. =
+            make(exp) =
+                this = $(make-stmt)
+                this.exp = $(exp)
+                return $(this)
+
+            to-string() =
+                value $"case $(exp.to-string):"
+
+    LabelStmt. =
+        class LabelStmt
+        extends $(Stmt)
+
+        protected.name =
+
+        protected. =
+            make(name) =
+                this = $(make-stmt)
+                this.name = $(name)
+                return $(this)
+
+            to-string() =
+                value "$(name):"
+
+    GotoStmt. =
+        class GotoStmt
+        extends $(Stmt)
+
+        protected.name =
+
+        protected. =
+            make(name) =
+                this = $(make-stmt)
+                this.name = $(name)
+                return $(this)
+
+            to-string() =
+                value $"goto $(name);"
+
+    ContinueStmt. =
+        class ContinueStmt
+        extends $(Stmt)
+
+        protected. =
+            make() =
+                make-stmt()
+
+            to-string() =
+                value $"continue;"
+
+    BreakStmt. =
+        class BreakStmt
+        extends $(Stmt)
+
+        protected. =
+            make() =
+                make-stmt()
+
+            to-string() =
+                value $"break;"
+
+    ReturnStmt. =
+        class ReturnStmt
+        extends $(Stmt)
+
+        protected.exp =
+
+        protected. =
+            make(exp) =
+                this = $(make-stmt)
+                this.exp = $(exp)
+                return $(this)
+
+            to-string() =
+                value $"return $(exp.to-string);"
+
+    BlockStmt. =
+        class BlockStmt
+        extends $(Stmt)
+
+        protected.stmts = $(empty)
+
+        protected. =
+            make(stmts) =
+                this = $(make-stmt)
+                this.stmts = $(stmts)
+                return $(this)
+
+            empty() =
+                make-stmt()
+
+            to-string() =
+                value $"{$(nl)$(array-to-string-term $(stmts), $(nl))}"
+
+    WhileStmt. =
+        class WhileStmt
+        extends $(Stmt)
+
+        protected. =
+            test =
+            body =
+
+        protected. =
+            make(test, body) =
+                this = $(make-stmt)
+                this.test = $(test)
+                this.body = $(body)
+                return $(this)
+
+            to-string() =
+                value $"while($(test.to-string)) $(body.to-string)"
+
+    DoStmt. =
+        class DoStmt
+        extends $(Stmt)
+
+        protected. =
+            body =
+            exp =
+
+        protected. =
+            make(body, exp) =
+                this = $(make-stmt)
+                this.body = $(body)
+                this.exp = $(exp)
+                return $(this)
+
+            to-string() =
+                value $"do $(body.to-string)$(nl)while($(exp.to-string));"
+
+    ForStmt. =
+        class ForStmt
+        extends $(Stmt)
+
+        protected. =
+            init =
+            test =
+            post =
+            body =
+
+        protected. =
+            make(init, test, post, body) =
+                this = $(make-stmt)
+                this.init = $(init)
+                this.test = $(test)
+                this.post = $(post)
+                this.body = $(body)
+                return $(this)
+
+            to-string() =
+                value $"for($(init.to-string); $(test.to-string); $(post.to-string)) $(body.to-string)"
+
+    IfStmt. =
+        class IfStmt
+        extends $(Stmt)
+
+        protected. =
+            test =
+            stmt1 =
+            declare stmt2
+
+        protected. =
+            make1(test, stmt1) =
+                this = $(make-stmt)
+                this.test = $(test)
+                this.stmt1 = $(stmt1)
+                return $(this)
+
+            make2(test, stmt1, stmt2) =
+                this = $(make-stmt)
+                this.test = $(test)
+                this.stmt1 = $(stmt1)
+                this.stmt2 = $(stmt2)
+                return $(this)
+
+            to-string() =
+                s = $"if($(test.to-string)) $(stmt1.to-string)"
+                if $(defined stmt2)
+                    s += $"$(nl)else $(stmt2.to-string)"
+                    export
+                return $(s)
+
+    SwitchStmt. =
+        class SwitchStmt
+        extends $(Stmt)
+
+        protected. =
+            exp =
+            body =
+
+        protected. =
+            make(exp, body) =
+                this = $(make-stmt)
+                this.exp = $(exp)
+                this.body = $(body)
+                return $(this)
+
+            to-string() =
+                value $"switch($(exp.to-string))$(body.to-string)"
+
+    ########################################################################
+    # Type modifiers
+    #
+    TypeModBase. =
+        class TypeModBase
+        extends $(Base)
+
+        protected. =
+            make-mod() =
+                make-loc()
+
+            is-named(quals) =
+                return false
+
+    #
+    # gcc __attribute__ extension
+    #
+    TypeModAttribute. =
+        class TypeModAttribute
+        extends $(TypeModBase)
+
+        protected.exp =
+
+        protected. =
+            make(exp) =
+                this = $(make-mod)
+                this.exp = $(exp)
+                return $(this)
+
+            to-string() =
+                value $"__attribute__ ($(exp.to-string))"
+
+    #
+    # Name modifiers
+    #
+    TypeModNamed. =
+        class TypeModNamed
+        extends $(TypeModBase)
+
+        protected.name =
+
+        protected. =
+            make(name) =
+                this = $(make-mod)
+                this.name = $(name)
+                return $(this)
+
+            to-string() =
+                value $(name)
+
+            is-named(quals) =
+                mem($(name), $(quals))
+
+    TypeClass. =
+        class TypeClass
+        extends $(TypeModNamed)
+
+    TypeMod. =
+        class TypeMod
+        extends $(TypeModNamed)
+
+    TypeQual. =
+        class TypeQual
+        extends $(TypeModNamed)
+
+    ########################################################################
+    # Variable declarations.  These also serve as types.
+    #
+    # replace-var      : replace the variable part of the declaration
+    #                    with another declaration
+    # replace-fun      : replace the function part of the declaration
+    #                    with another declaration
+    # is-core          : the decl is just an identifier and nothing else
+    # is-none          : the decl is nothing, not even an identifier
+    # is-scalar        : can the data be represented in a machine word
+    #                    even if the type is not a scalar
+    # to-fun           : get the function part of the declaration.
+    # to-type          : produce a type from the decl
+    #
+    Var. =
+        class Var
+        extends $(Base)
+
+        protected. =
+            make-var() =
+                make-loc()
+
+            is-core() =
+                return false
+
+            is-none() =
+                return false
+
+            to-fun() =
+                return $(this)
+
+    #
+    # The identifier is not named
+    #
+    VarNone. =
+        class VarNone
+        extends $(Var)
+
+        protected. =
+            make() =
+                make-var()
+
+            to-string() =
+                return $(EMPTY)
+
+            to-identifier() =
+                return $(EMPTY)
+
+            to-id() =
+                return $(EMPTY)
+
+            to-var() =
+                return $(this)
+
+            is-core() =
+                return true
+
+            is-none() =
+                return true
+
+            replace-var(v) =
+                return $(v)
+
+            replace-fun(v) =
+                return $(v)
+
+            to-type(ty) =
+                return $(ty)
+
+    #
+    # Identifier
+    #
+    VarId. =
+        class VarId
+        extends $(Var)
+
+        protected. =
+            id =
+
+        protected. =
+            make(id) =
+                this = $(make-var)
+                this.id = $(id)
+                return $(this)
+
+            to-string() =
+                value $(id)
+
+            to-identifier() =
+                value $(id)
+
+            to-id() =
+                return $(id)
+
+            to-var() =
+                return $(this)
+
+            is-core() =
+                return true
+
+            replace-var(v) =
+                return $(v)
+
+            replace-fun(v) =
+                return $(v)
+
+            to-type(ty) =
+                return $(ty)
+
+    #
+    # A vararation with an initializer
+    #
+    declare TypeInit
+
+    VarInit. =
+        class VarInit
+        extends $(Var)
+
+        protected. =
+            var =
+            exp =
+
+        protected. =
+            make(var, exp) =
+                this = $(make-var)
+                this.var = $(var)
+                this.exp = $(exp)
+                return $(this)
+
+            to-string() =
+                value $"$(var.to-string) = $(exp.to-string)"
+
+            to-identifier() =
+                var.to-identifier()
+
+            to-var() =
+                var.to-var()
+
+            is-core() =
+                var.is-core()
+
+            replace-var(v) =
+                var = $(var.replace-var $(v))
+                return $(this)
+
+            replace-fun(v) =
+                var = $(var.replace-fun $(v))
+                return $(this)
+
+            to-fun() =
+                var.to-fun()
+
+            to-type(ty) =
+                var.to-type($(TypeInit.make $(ty), $(exp)))
+
+    #
+    # A qualified variation, like "const int* const unsigned int x;
+    #
+    declare TypeQualified
+
+    VarQualified. =
+        class VarQualified
+        extends $(Var)
+
+        protected. =
+            var =
+            qualifiers =
+
+        protected. =
+            make(var, qualifiers) =
+                if $(qualifiers)
+                    this = $(make-var)
+                    this.qualifiers = $(qualifiers)
+                    this.var = $(var)
+                    return $(this)
+                else
+                    return $(var)
+
+            to-string() =
+                return $"$(array-to-string-term $(qualifiers), $(space))$(var.to-string)"
+
+            to-identifier() =
+                return $"$(array-to-string-term $(qualifiers), _)$(var.to-identifier)"
+
+            to-var() =
+                var.to-var()
+
+            to-fun() =
+                var.to-fun()
+
+            is-core() =
+                var.is-core()
+
+            replace-var(v) =
+                var = $(var.replace-var $(v))
+                return $(this)
+
+            replace-fun(v) =
+                var = $(var.replace-fun $(v))
+                return $(this)
+
+            to-type(ty) =
+                var.to-type($(TypeQualified.make $(ty), $(qualifiers)))
+
+    #
+    # Gcc __attribute__ extension
+    #
+    declare TypeAttribute
+
+    VarAttribute. =
+        class VarAttribute
+        extends $(Var)
+
+        protected. =
+            var =
+            attribute =
+
+        protected. =
+            make(var, attribute) =
+                this = $(make-var)
+                this.var = $(var)
+                this.attribute = $(attribute)
+                return $(this)
+
+            to-string() =
+                value $"$(var.to-string) $(attribute.to-string)"
+
+            to-identifier() =
+                var.to-identifier()
+
+            to-var() =
+                var.to-var()
+
+            to-fun() =
+                var.to-fun()
+
+            is-core() =
+                var.is-core()
+
+            replace-var(v) =
+                var = $(var.replace-var $(v))
+                return $(this)
+
+            replace-fun(v) =
+                var = $(var.replace-fun $(v))
+                return $(this)
+
+            to-type(ty) =
+                var.to-type($(TypeAttribute.make $(ty), $(attribute)))
+
+    #
+    # Various kinds of pointers.
+    #
+    declare TypePointer
+
+    VarPointer. =
+        class VarPointer
+        extends $(Var)
+
+        protected. =
+            var =
+
+        protected. =
+            make(var) =
+                this = $(make-var)
+                this.var = $(var)
+                return $(this)
+
+            to-string() =
+                return $"*$(var.to-string)"
+
+            to-identifier() =
+                return $"P$(var.to-identifier)"
+
+            to-var() =
+                var.to-var()
+
+            to-fun() =
+                var.to-fun()
+
+            replace-var(v) =
+                var = $(var.replace-var $(v))
+                return $(this)
+
+            replace-fun(v) =
+                var = $(var.replace-fun $(v))
+                return $(this)
+
+            to-type(ty) =
+                var.to-type($(TypePointer.make $(ty)))
+
+    #
+    # References are like pointers.  This is a C++ thing.
+    #
+    declare TypeRef
+
+    VarRef. =
+        class VarRef
+        extends $(Var)
+
+        protected. =
+            var =
+
+        protected. =
+            make(var) =
+                this = $(make-var)
+                this.var = $(var)
+                return $(this)
+
+            to-string() =
+                value $"&$(var.to-string)"
+
+            to-identifier() =
+                value $"R$(var.to-identifier)"
+
+            to-var() =
+                var.to-var()
+
+            to-fun() =
+                var.to-fun()
+
+            replace-var(v) =
+                var = $(var.replace-var $(v))
+                return $(this)
+
+            replace-fun(v) =
+                var = $(var.replace-fun $(v))
+                return $(this)
+
+            to-type(ty) =
+                var.to-type($(TypeRef.make $(ty)))
+
+    #
+    # Arrays have possible dimensions.
+    #
+    declare TypeArray
+
+    VarArray. =
+        class VarArray
+        extends $(Var)
+
+        protected. =
+            var =
+            exp = $(NoneExp.make)
+
+        protected. =
+            make(var, exp) =
+                this = $(make-var)
+                this.var = $(var)
+                this.exp = $(exp)
+                return $(this)
+
+            make-empty(var) =
+                this = $(make-var)
+                this.var = $(var)
+                return $(this)
+
+            to-string() =
+                value $"$(var.to-string)[$(exp.to-string)]"
+
+            to-identifier() =
+                value $"$(var.to-identifier)_array"
+
+            to-var() =
+                var.to-var()
+
+            to-fun() =
+                var.to-fun()
+
+            replace-var(v) =
+                var = $(var.replace-var $(v))
+                return $(this)
+
+            replace-fun(v) =
+                var = $(var.replace-fun $(v))
+                return $(this)
+
+            to-type(ty) =
+                var.to-type($(TypeArray.make $(ty), $(exp)))
+
+    #
+    # A function (not a function pointer)
+    #
+    declare TypeFun
+
+    VarFun. =
+        class VarFun
+        extends $(Var)
+
+        protected. =
+            var =
+            params =
+
+        protected. =
+            make(var, params) =
+                this = $(make-var)
+                this.var = $(var)
+                this.params = $(params)
+                return $(this)
+
+            to-string() =
+                value $"($(var.to-string))($(array-to-string-sep $(params), $(comma)))"
+
+            to-identifier() =
+                value $"$(var.to-identifier)_fun_$(array-to-identifier-sep $(params), _X_)"
+
+            to-var() =
+                var.to-var()
+
+            to-fun() =
+                return $(this)
+
+            replace-var(v) =
+                var = $(var.replace-var $(v))
+                return $(this)
+
+            replace-fun(v) =
+                return $(v)
+
+            to-type(ty) =
+                var.to-type($(TypeFun.make $(ty), $(params)))
+
+    #
+    # Fields are really only valid in structs and unions.
+    # However, we allow them on any vararation.
+    #
+    declare TypeField
+
+    VarField. =
+        class VarField
+        extends $(Var)
+
+        protected. =
+            var =
+            bits =
+
+        protected. =
+            make(var, bits) =
+                this = $(make-var)
+                this.var = $(var)
+                this.bits = $(bits)
+                return $(this)
+
+            to-var() =
+                var.to-var()
+
+            to-string() =
+                value $"$(var.to-string) : $(bits.to-string)"
+
+            to-identifier() =
+                value $"$(var.to-identifier)_field"
+
+            is-core() =
+                var.is-core()
+
+            replace-var(v) =
+                var = $(var.replace-var $(v))
+                return $(this)
+
+            replace-fun(v) =
+                var = $(var.replace-fun $(v))
+                return $(this)
+
+            to-fun(v) =
+                var.to-fun()
+
+            to-type(ty) =
+                var.to-type($(TypeField.make $(ty), $(bits)))
+
+    ########################################################################
+    # Declarations with type information
+    #
+    # is-elide      : is the decl an elision
+    #
+    Decl. =
+        class Decl
+        extends $(Base)
+
+        protected. =
+            make-decl() =
+                make-loc()
+
+            is-elide() =
+                return false
+
+    #
+    # An elision has no information
+    #
+    declare TypeElide
+
+    ElideDecl. =
+        class ElideDecl
+        extends $(Decl)
+
+        protected. =
+            make() =
+                make-decl()
+
+            is-elide() =
+                return true
+
+            to-string() =
+                return ...
+
+            to-type() =
+                return $(TypeElide.make)
+
+    #
+    # This is info about a variable, including the type info.
+    #
+    VarDecl. =
+        class VarDecl
+        extends $(Decl)
+
+        protected. =
+            type =
+            var =
+
+        protected. =
+            make(type, var) =
+                this = $(make-decl)
+                this.type = $(type)
+                this.var = $(var)
+                return $(this)
+
+            to-string() =
+                if $(var.is-none)
+                    type.to-string()
+                else
+                    value $"$(type.to-string) $(var.to-string)"
+
+            to-identifier() =
+                if $(var.is-none)
+                    type.to-identifier()
+                else
+                    value $"$(type.to-identifier)_$(var.to-identifier)"
+
+            to-var() =
+                var.to-var()
+
+            to-fun() =
+                var.to-fun()
+
+            replace-var(v) =
+                var = $(var.replace-var $(v))
+                return $(this)
+
+            replace-fun(v) =
+                var = $(var.replace-fun $(v))
+                return $(this)
+
+            to-type() =
+                var.to-type($(type))
+
+    ########################################################################
+    # Named types
+    #
+    # Methods:
+    #    to-string            : produce a string representation of the type
+    #                           this is defined only for the core types
+    #    resolve              : resolve all typedefs
+    #    simplify             : like resolve, but also eliminate fields, remove
+    #                           const and extern, and turn outermost array into
+    #                           a pointer.
+    #    no-fields            : remove any field definitions from struct/union/enum.
+    #    is-void              : is this the void type?
+    #    is-scalar            : can the data be represented in a single machine word?
+    #    is-struct-or-enum    : is the data a struct, union, or enum type?
+    #    to-decl              : produce a variable declaration from the type
+    #    unqualified          : remove as many qualifiers (like extern, const, short, etc.)
+    #                           as possible.
+    #
+    #    storage-info          : What kind of item is this?  The result is one of the following.
+    #        false             : a scalar
+    #        nonscalar         : a nonscalar
+    #        pointer           : a pointer
+    #        ref               : a reference
+    #
+    Type. =
+        class Type
+        extends $(Base)
+
+        protected. =
+            make-type() =
+                make-loc()
+
+            is-void() =
+                return false
+
+            is-scalar() =
+                return false
+
+            is-struct-or-enum() =
+                return false
+
+            storage-info() =
+                if $(is-scalar)
+                    return false
+                else
+                    return nonscalar
+
+            no-fields() =
+                return $(this)
+
+            unqualified() =
+                return $(this)
+
+            to-extern() =
+                IS_EXTERN = true
+                unqualified()
+
+            to-extern-field() =
+                IS_EXTERN = true
+                unqualified()
+
+            to-pointer() =
+                return $(this)
+
+            dereference() =
+                return $(this)
+
+            reference() =
+                return $(TypePointer.make $(this))
+
+            resolve() =
+                return $(this)
+
+            resolve-and-prune() =
+                return $(this)
+
+            simplify() =
+                this = $(resolve-and-prune)
+                this = $(to-pointer)
+                return $(this)
+
+            #
+            # By default, turn the type back into a decl before printing
+            #
+            declare to-decl
+
+            to-string() =
+                decl = $(to-decl $(VarNone.make))
+                decl.to-string()
+
+            to-identifier() =
+                decl = $(to-decl $(VarNone.make))
+                decl.to-identifier()
+
+            to-name() =
+                PRINT_NAME = true
+                to-string()
+
+            to-ml-string() =
+                to-identifier()
+
+    #
+    # Named type
+    #
+    TypeId. =
+        class TypeId
+        extends $(Type)
+
+        protected. =
+            id =
+
+        protected. =
+            make(id) =
+                this = $(make-type)
+                this.id = $(id)
+                return $(this)
+
+            to-string() =
+                value $(id)
+
+            to-identifier() =
+                value $(id)
+
+            to-ml-string() =
+                value t_$(id)
+
+            resolve() =
+                if $(prog.typedefs.mem $(id))
+                    ty = $(prog.typedefs.find $(id))
+                    ty = $(ty.resolve)
+                    return $(ty)
+                else
+                    return $(this)
+
+            resolve-and-prune() =
+                if $(prog.typedefs.mem $(id))
+                    ty = $(prog.typedefs.find $(id))
+                    ty = $(ty.resolve-and-prune)
+                    return $(ty)
+                else
+                    return $(this)
+
+            is-void() =
+                equal($(id), void)
+
+            is-scalar() =
+                mem($(id), void __bool char int float double)
+
+            to-decl(var) =
+                VarDecl.make($(this), $(var))
+
+    #
+    # A fake type for elisions
+    #
+    TypeElide. =
+        class TypeElide
+        extends $(Type)
+
+        protected. =
+            make() =
+                make-type()
+
+            to-decl(var) =
+                ElideDecl.make()
+
+    #
+    # struct definition
+    #
+    TypeStruct. =
+        class TypeStruct
+        extends $(Type)
+
+        protected. =
+            kind =
+            name = false
+            fields = false
+
+        protected. =
+            make(kind, name, fields) =
+                this = $(make-type)
+                this.kind = $(kind)
+                this.name = $(name)
+                this.fields = $(fields)
+                return $(this)
+
+            undefined(kind, name) =
+                this = $(make-type)
+                this.kind = $(kind)
+                this.name = $(name)
+                return $(this)
+
+            is-struct-or-enum() =
+                return true
+
+            no-fields() =
+                fields = false
+                return $(this)
+
+            no-subfields() =
+                if $(not $(equal $(fields), false))
+                    fields = $(fields.map field, $(field.no-fields))
+                    return $(this)
+                else
+                    return $(this)
+
+            to-name() =
+                if $(prog.type-names.mem $(name))
+                    prog.type-names.find($(name))
+                else
+                    value $"$(kind) $(name)"
+
+            to-identifier() =
+                if $(prog.type-names.mem $(name))
+                    prog.type-names.find($(name))
+                else
+                    value $(name)
+
+            to-ml-string() =
+                value $(kind)_$(name)
+
+            to-string() =
+                if $(PRINT_NAME)
+                    to-name()
+                elseif $(equal $(fields), false)
+                    value $"$(kind) $(name)"
+                else
+                    value $"$(kind) $(name) {$(array-to-string-wrap $(fields), $(nl)$(tab), $(semi))$(nl)}"
+
+            resolve() =
+                if $(not $(equal $(fields), false))
+                    protected.fields = $(fields.map field, $(field.resolve))
+                    value $(this)
+                else
+                    value $(this)
+
+            resolve-and-prune() =
+                fields = false
+                return $(this)
+
+            find-fields(prog) =
+                if $(not $(equal $(fields), false))
+                    value $(fields)
+                else
+                    ty = $(prog.structs.find $(name))
+                    ty.find-fields($(prog))
+
+            to-decl(var) =
+                VarDecl.make($(this), $(var))
+
+    #
+    # A field in a tagged union.
+    #
+    TypeTaggedUnionField. =
+        class TypeTaggedUnionField
+        extends $(Base)
+
+        protected. =
+            tag =
+            decl =
+
+        protected. =
+            make(tag, decl) =
+                this = $(make-loc)
+                this.tag = $(tag)
+                this.decl = $(decl)
+                return $(this)
+
+            to-string() =
+                if $(tag)
+                    text[] = $"case $(tag.to-string):"
+                    export
+                else
+                    text[] = $"default:"
+                    export
+                text[] += $(decl.to-string)
+                return $(text)
+
+    #
+    # struct definition
+    #
+    TypeTaggedUnion. =
+        class TypeTaggedUnion
+        extends $(Type)
+
+        #
+        # The union has a name,
+        # a field that holds the tag,
+        # and a list of cases.
+        #
+        protected. =
+            name =
+            tag =
+            fields[] =
+
+        protected. =
+            #
+            # Compile the fields into their individual cases
+            #
+            make(name, cases) =
+                this = $(make-type)
+                this.name = $(name)
+                tags[] =
+                defcase = false
+                foreach(case, $(cases))
+                    if $(case.instanceof DefaultStmt)
+                        defcase = true
+                        tags[] += false
+                        export
+                    elseif $(case.instanceof CaseStmt)
+                        tags[] += $(case.exp)
+                        export
+                    else
+                        fields[] += $(tags.map tag, $(TypeTaggedUnionField.make $(tag), $(case)))
+                        if $(defcase)
+                            tag = $(case)
+                            export
+                        defcase = false
+                        tags[] =
+                        export
+                    export
+                return $(this)
+
+            is-struct-or-enum() =
+                return true
+
+            no-fields() =
+                fields = false
+                return $(this)
+
+            no-subfields() =
+                if $(not $(equal $(fields), false))
+                    fields = $(fields.map field, $(field.no-fields))
+                    return $(this)
+                else
+                    return $(this)
+
+            to-name() =
+                if $(prog.type-names.mem $(name))
+                    prog.type-names.find($(name))
+                else
+                    value $"__tagged_union $(name)"
+
+            to-identifier() =
+                if $(prog.type-names.mem $(name))
+                    prog.type-names.find($(name))
+                else
+                    value $(name)
+
+            to-ml-string() =
+                value tagged_union_$(name)
+
+            to-string() =
+                if $(PRINT_NAME)
+                    to-name()
+                elseif $(equal $(fields), false)
+                    value $"__tagged_union $(name)"
+                else
+                    value $"""__tagged_union $(name) {$(array-to-string-wrap $(fields), $(tnl), $(semi))$(nl)};"""
+
+            resolve() =
+                if $(not $(equal $(fields), false))
+                    fields = $(fields.map field, $(field.resolve))
+                    value $(this)
+                else
+                    value $(this)
+
+            resolve-and-prune() =
+                fields = false
+                return $(this)
+
+            find-fields(prog) =
+                if $(not $(equal $(fields), false))
+                    value $(fields)
+                else
+                    ty = $(prog.tagged-unions.find $(name))
+                    ty.find-fields($(prog))
+
+            to-decl(var) =
+                VarDecl.make($(this), $(var))
+
+    #
+    # Enum fields are a special case
+    #
+    EnumFieldDecl. =
+        class EnumFieldDecl
+        extends $(Base)
+
+        protected. =
+            name =
+            val = false
+
+        protected. =
+            make(name) =
+                this = $(make-loc)
+                this.name = $(name)
+                return $(this)
+
+            make-value(name, val) =
+                this = $(make-loc)
+                this.name = $(name)
+                this.val = $(val)
+                return $(this)
+
+            to-string() =
+                s = $"$(name)"
+                if $(not $(equal $(val), false))
+                    s += $" = $(val.to-string)"
+                    export
+                return $(s)
+
+    #
+    # Enum definition
+    #
+    TypeEnum. =
+        class TypeEnum
+        extends $(Type)
+
+        protected. =
+            name = false
+            fields = false
+
+        protected. =
+            make(name, fields) =
+                this = $(make-type)
+                this.name = $(name)
+                this.fields = $(fields)
+                return $(this)
+
+            undefined(name) =
+                this = $(make-type)
+                this.name = $(name)
+                return $(this)
+
+            no-fields() =
+                fields = false
+                return $(this)
+
+            is-struct-or-enum() =
+                return true
+
+            no-subfields() =
+                return $(this)
+
+            resolve-and-prune() =
+                fields = false
+                return $(this)
+
+            to-name() =
+                if $(prog.type-names.mem $(name))
+                    prog.type-names.find($(name))
+                else
+                    value $"enum $(name)"
+
+            to-identifier() =
+                if $(prog.type-names.mem $(name))
+                    prog.type-names.find($(name))
+                else
+                    value $(name)
+
+            to-ml-string() =
+                value enum_$(name)
+
+            to-string() =
+                if $(PRINT_NAME)
+                    to-name()
+                elseif $(equal $(fields), false)
+                    value $"enum $(name)"
+                else
+                    value $"enum $(name) {$(array-to-string-wrap $(fields), $(nl)$(tab), $(comma))$(nl)}"
+
+            find-fields(prog) =
+                if $(not $(equal $(fields), false))
+                    value $(fields)
+                else
+                    ty = $(prog.enums.find $(name))
+                    ty.find-fields($(prog))
+
+            is-scalar() =
+                return true
+
+            to-decl(var) =
+                VarDecl.make($(this), $(var))
+
+    ################################################
+    # Types with a single sub element
+    #
+    Type1. =
+        class Type1
+        extends $(Type)
+
+        protected. =
+            ty =
+
+        protected. =
+            no-fields() =
+                ty = $(ty.no-fields)
+                return $(this)
+
+            resolve() =
+                ty = $(ty.resolve)
+                return $(this)
+
+            resolve-and-prune() =
+                ty = $(ty.resolve-and-prune)
+                return $(this)
+
+    ################################################
+    # Pointer types
+    #
+    TypePtr. =
+        class TypePtr
+        extends $(Type1)
+
+        protected. =
+            is-scalar() =
+                return true
+
+            storage-info() =
+                return pointer
+
+            dereference() =
+                return $(ty)
+
+            unqualified() =
+                IS_POINTER = true
+                ty = $(ty.unqualified)
+                return $(this)
+
+            to-ml-string() =
+                value $"($(ty.to-ml-string)) dll_pointer"
+
+    #
+    # Pointer
+    #
+    TypePointer. =
+        class TypePointer
+        extends $(TypePtr)
+
+        protected. =
+            make(ty) =
+                this = $(make-type)
+                this.ty = $(ty)
+                return $(this)
+
+            to-decl(var) =
+                ty.to-decl($(VarPointer.make $(var)))
+
+    #
+    # Reference
+    #
+    TypeRef. =
+        class TypeRef
+        extends $(TypePtr)
+
+        protected. =
+            make(ty) =
+                this = $(make-type)
+                this.ty = $(ty)
+                return $(this)
+
+            storage-info() =
+                return ref
+
+            to-decl(var) =
+                ty.to-decl($(VarRef.make $(var)))
+
+            to-ml-string() =
+                value $"($(ty.to-ml-string)) ref"
+
+    #
+    # Array
+    #
+    TypeArray. =
+        class TypeArray
+        extends $(TypePtr)
+
+        protected. =
+            exp =
+
+        protected. =
+            make(ty, exp) =
+                this = $(make-type)
+                this.ty = $(ty)
+                this.exp = $(exp)
+                return $(this)
+
+            to-pointer() =
+                TypePointer.make($(ty))
+
+            to-decl(var) =
+                ty.to-decl($(VarArray.make $(var), $(exp)))
+
+    ################################################
+    # Attribute types.  These modify a type, but any methods
+    # just examine the inner type.
+    #
+    TypeAttr. =
+        class TypeAttr
+        extends $(Type1)
+
+        protected. =
+            to-pointer() =
+                ty = $(ty.to-pointer)
+                return $(this)
+
+            is-void() =
+                ty.is-void()
+
+            is-scalar() =
+                ty.is-scalar()
+
+            storage-info() =
+                ty.storage-info()
+
+            unqualified() =
+                ty.unqualified()
+
+            dereference() =
+                ty = $(ty.dereference)
+                return $(this)
+
+            to-ml-string() =
+                ty.to-ml-string()
+
+    #
+    # A variable definition with the given type
+    #
+    TypeVar. =
+        class TypeVar
+        extends $(TypeAttr)
+
+        protected. =
+            var =
+
+        protected. =
+            make(ty, var) =
+                this = $(make-type)
+                this.var = $(var)
+                this.ty = $(ty)
+                return $(this)
+
+            to-id() =
+                var.to-id()
+
+            to-type() =
+                return $(ty)
+
+            replace-var(v) =
+                var = $(v)
+                return $(this)
+
+            unqualified() =
+                ty = $(ty.unqualified)
+                if $(IS_EXTERN)
+                    return $(ty)
+                else
+                    return $(this)
+
+            to-extern-field() =
+                ty = $(ty.to-extern)
+                return $(this)
+
+            to-decl(var) =
+                ty.to-decl($(var))
+
+            reference() =
+                ty = $(ty.reference)
+                return $(this)
+
+    #
+    # Qualified type
+    #
+    TypeQualified. =
+        class TypeQualified
+        extends $(TypeAttr)
+
+        protected. =
+            qualifiers =
+
+        protected. =
+            make(ty, qualifiers) =
+                if $(qualifiers)
+                    this = $(make-type)
+                    this.qualifiers = $(qualifiers)
+                    this.ty = $(ty)
+                    return $(this)
+                else
+                    return $(ty)
+
+            unqualified() =
+                if $(IS_POINTER)
+                    ty = $(ty.unqualified)
+                    tymods[] =
+                    tyquals[] =
+                    foreach(qual, $(qualifiers))
+                        if $(qual.instanceof TypeMod)
+                            tymods[] += $(qual)
+                            export
+                        elseif $(qual.instanceof TypeQual)
+                            tyquals[] += $(qual.name)
+                            export
+                        export
+                    tyquals = $(set $(tyquals))
+                    tyquals = $(tyquals.map name, $(TypeQual.make $(name)))
+                    qualifiers[] = $(if $(IS_EXTERN), $(tymods), $(array $(tyquals), $(tymods)))
+                    if $(qualifiers)
+                        return $(this)
+                    else
+                        return $(ty)
+                else
+                    ty.unqualified()
+
+            # During simplification, remove class modifiers
+            resolve-and-prune() =
+                ty = $(ty.resolve-and-prune)
+                quals[] =
+                foreach(qual, $(qualifiers))
+                    if $(not $(qual.instanceof TypeClass))
+                        quals[] += $(qual)
+                        export
+                    export
+                qualifiers = $(quals)
+                if $(qualifiers)
+                    return $(this)
+                else
+                    return $(ty)
+
+            # Remove any const qualifier during pointer conversion
+            to-pointer() =
+                ty = $(ty.to-pointer)
+                quals[] =
+                foreach(qual, $(qualifiers))
+                    if $(not $(qual.is-named const __const))
+                        quals[] += $(qual)
+                        export
+                    export
+                qualifiers = $(quals)
+                if $(qualifiers)
+                    return $(this)
+                else
+                    return $(ty)
+
+            to-decl(var) =
+                ty.to-decl($(VarQualified.make $(var), $(qualifiers)))
+
+
+    #
+    # Qualified type
+    #
+    TypeCore. =
+        class TypeCore
+        extends $(TypeQualified)
+
+        protected. =
+            to-decl(var) =
+                VarDecl.make($(this), $(var))
+
+            to-string() =
+                return $"$(array-to-string-term $(qualifiers), $(space))$(ty.to-string)"
+
+            to-identifier() =
+                return $"$(array-to-string-term $(qualifiers), _)$(ty.to-identifier)"
+
+    #
+    # GCC attributes
+    #
+    TypeAttribute. =
+        class TypeAttribute
+        extends $(TypeAttr)
+
+        protected. =
+            attribute =
+
+        protected. =
+            make(ty, attribute) =
+                this = $(make-type)
+                this.ty = $(ty)
+                this.attribute = $(attribute)
+                return $(this)
+
+            unqualified() =
+                ty.unqualified()
+
+            to-decl(var) =
+                ty.to-decl($(VarAttribute.make $(var), $(attribute)))
+
+            resolve-and-prune() =
+                ty.resolve-and-prune()
+
+    #
+    # Field
+    #
+    TypeField. =
+        class TypeField
+        extends $(TypeAttr)
+
+        protected. =
+            bits =
+
+        protected. =
+            make(ty, bits) =
+                this = $(make-type)
+                this.ty = $(ty)
+                this.bits = $(bits)
+                return $(this)
+
+            resolve-and-prune() =
+                ty.resolve-and-prune()
+
+            to-decl(var) =
+                ty.to-decl($(VarField.make $(var), $(bits)))
+
+            unqualified() =
+                ty.unqualified()
+
+    #
+    # Initializer (to go with VarInit)
+    #
+    TypeInit. =
+        class TypeInit
+        extends $(TypeAttr)
+
+        protected. =
+            exp =
+
+        protected. =
+            make(ty, exp) =
+                this = $(make-type)
+                this.ty = $(ty)
+                this.exp = $(exp)
+                return $(this)
+
+            unqualified() =
+                ty.unqualified()
+
+            to-decl(var) =
+                ty.to-decl($(VarInit.make $(var), $(exp)))
+
+    ################################################
+    # Function (not a pointer).
+    #
+    TypeFun. =
+        class TypeFun
+        extends $(Type)
+
+        protected. =
+            ty =
+            params =
+
+        protected. =
+            make(ty, params) =
+                this = $(make-type)
+                this.ty = $(ty)
+                this.params = $(params)
+                return $(this)
+
+            unqualified() =
+                ty = $(ty.unqualified)
+                IS_POINTER = false
+                params = $(params.map param, $(param.unqualified))
+                return $(this)
+
+            resolve() =
+                ty = $(ty.resolve)
+                params = $(params.map param, $(param.resolve))
+                return $(this)
+
+            resolve-and-prune() =
+                ty = $(ty.resolve-and-prune)
+                params = $(params.map param, $(param.resolve-and-prune))
+                return $(this)
+
+            to-decl(var) =
+                ty.to-decl($(VarFun.make $(var), $(params)))
+
+            real-params() =
+                if $(params)
+                    param = $(params.nth 0)
+                    if $(param.is-void)
+                        return $(empty)
+                    else
+                        return $(params)
+                else
+                    return $(params)
+
+            to-ml-string() =
+                sep =
+                ty-params[] =
+                foreach(param, $(params))
+                    ty-params = $"$(ty-params)$(sep)($(param.to-ml-string))"
+                    sep = $" * "
+                    export
+                if $(not $(sep))
+                    ty-params = unit
+                    export
+                ty-result = $(ty.to-ml-string)
+                return $"""($(ty-params), $(ty-result)) dll_function"""
+
+    ########################################################################
+    # Definitions
+    #
+    Definition. =
+        class Definition
+        extends $(Base)
+
+        protected. =
+            make-def() =
+                make-loc()
+
+    #
+    # Just a type, no identifiers
+    #
+    VarNoneDef. =
+        class VarNoneDef
+        extends $(Definition)
+
+        protected. =
+            type =
+
+        protected. =
+            make(type) =
+                this = $(make-loc)
+                this.type = $(type)
+                return $(this)
+
+            to-string() =
+                decl = $(type.to-decl $(VarNone.make))
+                return $"$(decl.to-string);"
+
+    ElideDef. =
+        class ElideDef
+        extends $(Definition)
+        extends $(ElideDecl)
+
+    #
+    # The variable definition uses the internal form
+    #
+    VarDefCore. =
+        class TypeVar
+        extends $(Definition)
+        extends $(TypeVar)
+
+        protected. =
+            make(ty, decl) =
+                this = $(make-type)
+                this.var = $(decl.to-var)
+                this.ty = $(decl.to-type $(ty))
+                return $(this)
+
+            make-var(ty, var) =
+                this = $(make-type)
+                this.var = $(var)
+                this.ty = $(ty)
+                return $(this)
+
+            is-elide() =
+                return false
+
+    ParamDef. =
+        class ParamDef
+        extends $(VarDefCore)
+
+        protected. =
+            to-string() =
+                decl = $(ty.to-decl $(var))
+                decl.to-string()
+
+    VarDef. =
+        class VarDef
+        extends $(VarDefCore)
+
+        protected. =
+            to-string() =
+                decl = $(ty.to-decl $(var))
+                return $"$(decl.to-string);"
+
+    TypeDef. =
+        class TypeDef
+        extends $(VarDefCore)
+
+        protected. =
+            to-string() =
+                decl = $(ty.to-decl $(var))
+                return $"typedef $(decl.to-string);"
+
+    #
+    # Callbacks are wrappers around other definitions.
+    #
+    CallbackDef. =
+        class CallbackDef
+        extends $(Base)
+
+        protected.def =
+
+        protected. =
+            make(def) =
+                this = $(make-loc)
+                this.def = $(def)
+                return $(this)
+
+            to-string() =
+                value $"CALLBACK $(def.to-string);"
+
+    #
+    # Function definitions
+    #
+    FunDef. =
+        class FunDef
+        extends $(Definition)
+
+        protected. =
+            def =
+            body =
+
+        protected. =
+            make(type, decl, body) =
+                this = $(make-def)
+                def = $(ParamDef.make $(type), $(decl))
+                this.body = $(body)
+                return $(this)
+
+            to-string() =
+                value $"$(def.to-string)$(nl){$(nl)$(array-to-string-term $(body), $(nl))}"
+
+    #
+    # Fake the preprocessor directives
+    #
+    CppItem. =
+        class CppItem
+        extends $(Definition)
+
+        protected. =
+            line =
+
+        protected. =
+            make(line) =
+                this = $(make-def)
+                this.line = $(line)
+                return $(this)
+
+            to-string() =
+                value $"$(line)"
+
+    ########################################################################
+    # The actual parser
+    #
+    parser. =
+        extends $(Parser)
+
+        #
+        # Use the main lexer
+        #
+        lexer = $(lexer)
+
+        #
+        # Precedences, in ascending order
+        #
+        left(comma)
+        left(eqop13)
+        right(ternop12)
+        left(binop11)
+        left(binop10)
+        left(binop9)
+        left(binop8)
+        left(binop7)
+        left(binop6)
+        left(binop5)
+        left(binop4)
+        left(binop3)
+        left(binop2)
+        left(binop1)
+        right(unop1 incop1 cast sizeof)
+        left(binop0)
+        left(apply lparen)
+        nonassoc(ifthen)
+        nonassoc(else ifthenelse)
+
+        #
+        # A program
+        #
+        start(prog)
+
+        prog: all_defs eof
+           prog.add-defs($1)
+
+        ########################################################################
+        # Declarations and definitions
+        #
+        all_defs:
+            array()
+
+        all_defs: all_defs all_def
+            array($1 $2)
+
+        all_def: var_defs
+            value $1
+
+        all_def: fun_def
+            value $1
+
+        all_def: type_defs
+            value $1
+
+        all_def: callback_defs
+            value $1
+
+        all_def: cpp
+            CppItem.make($1)
+
+        ########################################################################
+        # Type specifiers
+        #
+        # This is annoying.  After any "tymod" or "type", then type identifiers
+        # act like normal identifiers.
+        #
+        decl_spec: decl_spec_id
+            value $1
+
+        decl_spec: decl_spec_any
+            value $1
+
+        decl_spec_id: decl_specifiers_id
+            TypeCore.make($(TypeId.make int), $1)
+
+        decl_spec_any: decl_specifiers_mod
+            TypeCore.make($(TypeId.make int), $1)
+
+        decl_spec_any: decl_specifiers_id_opt type_id decl_specifiers_any_opt
+            TypeCore.make($(TypeId.make $2), $(array $1 $3))
+
+        decl_spec_any: decl_specifiers_id_opt type_struct decl_specifiers_any_opt
+            TypeCore.make($2, $(array $1 $3))
+
+        decl_spec_any: decl_specifiers_mod type_builtin decl_specifiers_any_opt
+            TypeCore.make($(TypeId.make $2), $(array $1 $3))
+
+        #
+        # Specifiers that may-or-may-not contain type modifiers.
+        #
+        decl_specifiers_any_opt:
+            array()
+
+        decl_specifiers_any_opt: decl_specifiers_any_opt decl_specifier_id
+            array($1 $2)
+
+        decl_specifiers_any_opt: decl_specifiers_any_opt type_mod
+            array($1 $2)
+
+        #
+        # Specifiers that contain a type modifier.
+        #
+        decl_specifiers_mod: type_mod
+            array($1)
+
+        decl_specifiers_mod: decl_specifiers_id type_mod
+            array($1 $2)
+
+        decl_specifiers_mod: decl_specifiers_mod decl_specifier_id
+            array($1 $2)
+
+        decl_specifiers_mod: decl_specifiers_mod type_mod
+            array($1 $2)
+
+        #
+        # Must not be followed by a type name
+        #
+        decl_specifiers_id_opt:
+            array()
+
+        decl_specifiers_id_opt: decl_specifiers_id
+            value $1
+
+        decl_specifiers_id: decl_specifier_id
+            array($1)
+
+        decl_specifiers_id: decl_specifiers_id decl_specifier_id
+            array($1 $2)
+
+        decl_specifier_id: type_class
+            value $1
+
+        decl_specifier_id: type_qual
+            value $1
+
+        decl_specifier_id: attribute
+            value $1
+
+        #
+        # Non-top-level modifiers
+        #
+        type_qualifiers_opt:
+            array()
+
+        type_qualifiers_opt: type_qualifiers
+            value $1
+
+        type_qualifiers: type_qualifier
+            array($1)
+
+        type_qualifiers: type_qualifiers type_qualifier
+            array($1 $2)
+
+        type_qualifier: type_qual
+            value $1
+
+        type_qualifier: attribute
+            value $1
+
+        #
+        # Type specification
+        #
+        type_id: type
+            value $1
+
+        type_id: type_builtin
+            value $1
+
+        type_struct: struct_spec
+            value $1
+
+        type_struct: tagged_union_spec
+            value $1
+
+        type_struct: enum_spec
+            value $1
+
+        #
+        # Generic qualifier
+        #
+        type_class: tyclass
+            TypeClass.make($1)
+
+        type_qual: tyqual
+            TypeQual.make($1)
+
+        type_mod: tymod
+            TypeMod.make($1)
+
+        attribute: __attribute__ lparen exp rparen
+            TypeModAttribute.make($3)
+
+        #
+        # Struct
+        #
+        struct_spec: struct struct_declaration_list
+            private.name = $"$1$(name-index)"
+            name-index = $(add $(name-index), 1)
+            protected.val = $(TypeStruct.make $1, $(name), $2)
+            prog = $(prog.add-struct $(name), $(val))
+            prog = $(prog.add-anon-struct-type $(val))
+            export
+
+        struct_spec: struct type_or_id struct_declaration_list
+            protected.val = $(TypeStruct.make $1, $2, $3)
+            prog = $(prog.add-struct $2, $(val))
+            export
+
+        struct_spec: struct type_or_id
+            protected.val = $(TypeStruct.undefined $1, $2)
+            prog = $(prog.add-struct $2, $(val))
+            export
+
+        struct_declaration_list: lbrace struct_declaration_fields rbrace
+            value $2
+
+        struct_declaration_fields:
+            array()
+
+        struct_declaration_fields: struct_declaration_fields var_defs
+            array($1 $2)
+
+        #
+        # Tagged union
+        #
+        tagged_union_spec: __tagged_union type_or_id tagged_union_declaration_list
+            protected.val = $(TypeTaggedUnion.make $2, $3)
+            prog = $(prog.add-tagged-union $2, $(val))
+            export
+
+        tagged_union_declaration_list: lbrace tagged_union_declaration_fields rbrace
+            value $2
+
+        tagged_union_declaration_fields:
+            array()
+
+        tagged_union_declaration_fields: tagged_union_declaration_fields tagged_union_field
+            array($1 $2)
+
+        tagged_union_field: case exp colon
+            CaseStmt.make($2)
+
+        tagged_union_field: default colon
+            DefaultStmt.make()
+
+        tagged_union_field: var_defs
+            value $1
+
+        #
+        # Enum
+        #
+        enum_spec: enum enum_declaration_list
+            private.name = $"$1$(name-index)"
+            name-index = $(add $(name-index), 1)
+            protected.val = $(TypeEnum.make $(name), $2)
+            prog = $(prog.add-enum $(name), $(val))
+            prog = $(prog.add-anon-enum-type $(val))
+            export
+
+        enum_spec: enum type_or_id enum_declaration_list
+            protected.val = $(TypeEnum.make $2, $3)
+            prog = $(prog.add-enum $2, $(val))
+            export
+
+        enum_spec: enum type_or_id
+            TypeEnum.undefined($2)
+
+        enum_declaration_list: lbrace rbrace
+            array()
+
+        enum_declaration_list: lbrace enum_decl_list opt_comma rbrace
+            value $2
+
+        enum_decl_list: enum_decl
+            array($1)
+
+        enum_decl_list: enum_decl_list comma enum_decl
+            array($1 $3)
+
+        enum_decl: id :prec: apply
+            EnumFieldDecl.make($1)
+
+        enum_decl: id eq exp :prec: apply
+            EnumFieldDecl.make-value($1, $3)
+
+        ########################################################################
+        # Variable definitions
+        #
+
+        #
+        # Strict identifiers
+        #
+        id_init_decl_list_opt:
+            array()
+
+        id_init_decl_list_opt: id_init_decl_list
+            value $1
+
+        id_init_decl_list: id_init_decl
+            array($1)
+
+        id_init_decl_list: id_init_decl_list comma any_init_decl
+            array($1 $3)
+
+        id_init_decl: id_decl
+            value $1
+
+        id_init_decl: id_decl colon exp
+            VarField.make($1, $3)
+
+        id_init_decl: colon exp
+            VarField.make($(VarNone.make), $2)
+
+        id_init_decl: id_decl eq init
+            VarInit.make($1, $3)
+
+        id_decl: direct_decl_id
+            value $1
+
+        id_decl: star type_qualifiers_opt id_decl
+            VarPointer.make($(VarQualified.make $3, $2))
+
+        id_decl: amp type_qualifiers_opt id_decl
+            VarRef.make($(VarQualified.make $3, $2))
+
+        direct_decl_id: id
+            VarId.make($1)
+
+        direct_decl_id: lparen id_decl rparen
+            value $2
+
+        direct_decl_id: direct_decl_id lbrack rbrack
+            VarArray.make-empty($1)
+
+        direct_decl_id: direct_decl_id lbrack exp rbrack
+            VarArray.make($1, $3)
+
+        direct_decl_id: direct_decl_id lparen opt_param_list rparen :prec: apply
+            VarFun.make($1, $3)
+
+        direct_decl_id: direct_decl_id attribute
+            VarAttribute.make($1, $2)
+
+        #
+        # Any identifiers (type identifiers are treated as normal identifiers)
+        #
+        any_init_decl_list_opt:
+            array()
+
+        any_init_decl_list_opt: any_init_decl_list
+            value $1
+
+        any_init_decl_list: any_init_decl
+            array($1)
+
+        any_init_decl_list: any_init_decl_list comma any_init_decl
+            array($1 $3)
+
+        any_init_decl: any_decl
+            value $1
+
+        any_init_decl: any_decl colon exp
+            VarField.make($1, $3)
+
+        any_init_decl: colon exp
+            VarField.make($(VarNone.make), $2)
+
+        any_init_decl: any_decl eq init
+            VarInit.make($1, $3)
+
+        any_decl: direct_decl_any
+            value $1
+
+        any_decl: star type_qualifiers_opt any_decl
+            VarPointer.make($(VarQualified.make $3, $2))
+
+        any_decl: amp type_qualifiers_opt any_decl
+            VarRef.make($(VarQualified.make $3, $2))
+
+        direct_decl_any: id
+            VarId.make($1)
+
+        direct_decl_any: type
+            VarId.make($1)
+
+        direct_decl_any: lparen any_decl rparen
+            value $2
+
+        direct_decl_any: direct_decl_any lbrack rbrack
+            VarArray.make-empty($1)
+
+        direct_decl_any: direct_decl_any lbrack exp rbrack
+            VarArray.make($1, $3)
+
+        direct_decl_any: direct_decl_any lparen opt_param_list rparen :prec: apply
+            VarFun.make($1, $3)
+
+        direct_decl_any: direct_decl_any attribute
+            VarAttribute.make($1, $2)
+
+        ########################################################################
+        # Function parameters.
+        #
+        # These are similar to a var_def, but only one variable at a time is
+        # allowed, and the variable name need not be mentioned.
+        #
+        opt_param_list:
+            array()
+
+        opt_param_list: param_list
+            value $1
+
+        param_list: param_decl
+            array($1)
+
+        param_list: param_list comma param_decl
+            array($1 $3)
+
+        param_decl: decl_spec_id id_decl
+            ParamDef.make($1, $2)
+
+        param_decl: decl_spec_any any_decl
+            ParamDef.make($1, $2)
+
+        param_decl: decl_spec_id abstract_decl
+            ParamDef.make($1, $2)
+
+        param_decl: decl_spec_any abstract_decl
+            ParamDef.make($1, $2)
+
+        param_decl: decl_spec
+            ParamDef.make($1, $(VarNone.make))
+
+        param_decl: elide
+            ElideDef.make()
+
+        fun_param_list: lparen opt_param_list rparen
+            value $2
+
+        abstract_decl: direct_abstract_decl
+            value $1
+
+        abstract_decl: star type_qualifiers_opt
+            VarPointer.make($(VarQualified.make $(VarNone.make), $2))
+
+        abstract_decl: star type_qualifiers_opt abstract_decl
+            VarPointer.make($(VarQualified.make $3, $2))
+
+        abstract_decl: amp type_qualifiers_opt
+            VarRef.make($(VarQualified.make $(VarNone.make), $2))
+
+        abstract_decl: amp type_qualifiers_opt abstract_decl
+            VarRef.make($(VarQualified.make $3, $2))
+
+        direct_abstract_decl: lparen abstract_decl rparen
+            value $2
+
+        direct_abstract_decl: direct_abstract_decl lbrack rbrack
+            VarArray.make-empty($1)
+
+        direct_abstract_decl: direct_abstract_decl lbrack exp rbrack
+            VarArray.make($1, $3)
+
+        direct_abstract_decl: direct_abstract_decl fun_param_list
+            VarFun.make($1, $2)
+
+        direct_abstract_decl: direct_abstract_decl attribute
+            VarAttribute($1, $2)
+
+        #
+        # Variable definitions
+        #
+        var_defs: decl_spec_id id_init_decl_list_opt semi
+            if $2
+                foreach(name, $2)
+                    VarDef.make($1, $(name))
+            else
+                array($(VarNoneDef.make $1))
+
+        var_defs: decl_spec_any any_init_decl_list_opt semi
+            if $2
+                foreach(name, $2)
+                    VarDef.make($1, $(name))
+            else
+                array($(VarNoneDef.make $1))
+
+        callback_defs: callback var_defs
+            foreach(def, $2)
+                CallbackDef.make($(def))
+
+        #
+        # Type definitions
+        #
+        type_var_defs: decl_spec_id id_init_decl_list_opt
+            foreach(name, $2)
+                TypeDef.make($1, $(name))
+
+        type_var_defs: decl_spec_any any_init_decl_list_opt
+            foreach(name, $2)
+                TypeDef.make($1, $(name))
+
+        type_defs: decl_specifiers_id_opt typedef type_var_defs semi
+            protected.val = $3
+            private.hidden-flag = $(1.exists spec, $(spec.is-named __dll_hidden))
+            foreach(def, $3)
+                private.v = $(def.to-id)
+                private.ty = $(def.ty)
+                types = $(types.add $(v), type)
+
+                # Add the typedef if it is not internal
+                if $(not $(hidden-flag))
+                    prog = $(prog.add-typedef $(v), $(ty))
+                    export
+
+                # Add the type name translation if this is an struct or enum
+                if $(ty.is-struct-or-enum)
+                    private.name = $(ty.name)
+                    if $(not $(prog.type-names.mem $(name)))
+                        prog = $(prog.add-type-name $(name), $(v))
+                        export
+                    export
+                export
+            export
+
+        #
+        # Function definition
+        #
+        fun_def: decl_spec_id id_decl lbrace stmt_list rbrace
+            FunDef.make($1, $2, $4)
+
+        fun_def: decl_spec_any any_decl lbrace stmt_list rbrace
+            FunDef.make($1, $2, $4)
+
+        ########################################################################
+        # Expressions
+        #
+
+        #
+        # Initializers
+        #
+        init: exp
+            InitExp.make($1)
+
+        init: lbrace init_list_opt opt_comma rbrace
+            InitArray.make($2)
+
+        init_list_opt:
+            array()
+
+        init_list_opt: init_list
+            value $1
+
+        init_list: init_field
+            array($1)
+
+        init_list: init_list comma init_field
+            array($1 $3)
+
+        init_field: init
+            value $1
+
+        init_field: id colon init
+            InitField.make($1, $3)
+
+        init_field: type colon init
+            InitField.make($1, $3)
+
+        #
+        # Constant expressions
+        #
+        exp: int
+            IntExp.make($1)
+
+        exp: float
+            FloatExp.make($1)
+
+        exp: char
+            CharExp.make($1)
+
+        exp: string
+            StringExp.make($1)
+
+        exp: id
+            IdExp.make($1)
+
+        #
+        # Unary expressions
+        #
+        exp: unop1 exp
+            Exp1.make($1, $2)
+
+        exp: incop1 exp
+            PreExp1.make($1, $2)
+
+        exp: exp incop1
+            PostExp1.make($2, $1)
+
+        exp: minus exp :prec: unop1
+            Exp1.make($1, $2)
+
+        exp: plus exp :prec: unop1
+            Exp1.make($1, $2)
+
+        exp: star exp :prec: unop1
+            Exp1.make($1, $2)
+
+        exp: amp exp :prec: unop1
+            Exp1.make($1, $2)
+
+        #
+        # Binary expressions
+        #
+        exp: exp binop0 exp
+            Exp2.make($2, $1, $3)
+
+        exp: exp binop2 exp
+            Exp2.make($2, $1, $3)
+
+        exp: exp star exp :prec: binop2
+            Exp2.make($2, $1, $3)
+
+        exp: exp minus exp :prec: binop3
+            Exp2.make($2, $1, $3)
+
+        exp: exp plus exp :prec: binop3
+            Exp2.make($2, $1, $3)
+
+        exp: exp binop4 exp
+            Exp2.make($2, $1, $3)
+
+        exp: exp binop5 exp
+            Exp2.make($2, $1, $3)
+
+        exp: exp binop6 exp
+            Exp2.make($2, $1, $3)
+
+        exp: exp binop7 exp
+            Exp2.make($2, $1, $3)
+
+        exp: exp amp exp :prec: binop7
+            Exp2.make($2, $1, $3)
+
+        exp: exp binop8 exp
+            Exp2.make($2, $1, $3)
+
+        exp: exp binop9 exp
+            Exp2.make($2, $1, $3)
+
+        exp: exp binop10 exp
+            Exp2.make($2, $1, $3)
+
+        exp: exp binop11 exp
+            Exp2.make($2, $1, $3)
+
+        exp: exp quest exp colon exp :prec: ternop12
+            Exp3.make($1, $2, $3, $4, $5)
+
+        exp: exp eqop13 exp
+            AssignExp.make($2, $1, $3)
+
+        exp: exp eq exp :prec: eqop13
+            AssignExp.make($2, $1, $3)
+
+        exp: exp comma exp
+            Exp2.make($2, $1, $3)
+
+        #
+        # Special expressions
+        #
+        exp: lparen exp rparen
+            ParensExp.make($2)
+
+        exp: exp lbrack exp rbrack :prec: unop1
+            SubscriptExp.make($1, $3)
+
+        exp: id lparen args_opt rparen :prec: apply
+            ApplyExp.make($1, $3)
+
+        exp: lparen cast_type rparen exp :prec: cast
+            CastExp.make($2, $4)
+
+        exp: sizeof lparen cast_type rparen :prec: sizeof
+            SizeofExp.make($3)
+
+        exp: sizeof lparen exp rparen :prec: sizeof
+            SizeofExp.make($3)
+
+        cast_type: decl_spec
+            ParamDef.make($1, $(VarNone.make))
+
+        cast_type: decl_spec abstract_decl
+            ParamDef.make($1, $2)
+
+        cast_type: lparen cast_type rparen
+            value $2
+
+        #
+        # Optional
+        #
+        opt_exp:
+            NoneExp.make()
+
+        opt_exp: exp
+            value $1
+
+        ########################################################################
+        # Statements
+        #
+        stmt: semi
+            EmptyStmt.make()
+
+        stmt: exp semi
+            ExpStmt.make($1)
+
+        stmt: if lparen exp rparen stmt :prec: ifthen
+            IfStmt.make1($3, $5)
+
+        stmt: if lparen exp rparen stmt else stmt :prec: ifthenelse
+            IfStmt.make2($3, $5, $7)
+
+        stmt: switch lparen exp rparen stmt
+            SwitchStmt.make($3, $5)
+
+        stmt: for lparen opt_exp semi opt_exp semi opt_exp rparen stmt
+            ForStmt.make($3, $5, $7, $9)
+
+        stmt: while lparen exp rparen stmt
+            WhileStmt.make($3, $5)
+
+        stmt: do stmt while lparen exp rparen semi
+            DoStmt.make($2, $5)
+
+        stmt: return semi
+            ReturnStmt.make($(NoneExp.make))
+
+        stmt: return exp semi
+            ReturnStmt.make($2)
+
+        stmt: break semi
+            BreakStmt.make()
+
+        stmt: continue semi
+            ContinueStmt.make()
+
+        stmt: goto id semi
+            GotoStmt.make($2)
+
+        stmt: lbrace stmt_list rbrace
+            BlockStmt.make($2)
+
+        stmt: all_def
+            value $1
+
+        stmt: id colon
+            LabelStmt.make($1)
+
+        stmt: case exp colon
+            CaseStmt.make($2)
+
+        stmt: default colon
+            DefaultStmt.make()
+
+        stmt_list:
+            array()
+
+        stmt_list: stmt_list stmt
+            array($1 $2)
+
+        #
+        # Arguments
+        #
+        args_opt:
+            array()
+
+        args_opt: args
+            value $1
+
+        args: exp :prec: apply
+            array($1)
+
+        args: args comma exp :prec: apply
+            array($1 $3)
+
+        #
+        # Helpers
+        #
+        opt_comma:
+
+        opt_comma: comma
+
+        type_or_id: id
+            value $1
+
+        type_or_id: type
+            value $1
+
+        #
+        # Debug it
+        #
+        build(false)
